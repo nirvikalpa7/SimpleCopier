@@ -14,9 +14,6 @@ namespace fs = std::filesystem;
 
 using namespace std::chrono_literals;
 
-const std::string tempFN = "copy_plan_";
-const std::string tempExten = ".txt";
-
 //===================================================================================================================================
 
 MainWindow::MainWindow(QWidget *parent)
@@ -51,18 +48,26 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_pushButtonDestination_clicked()
 {
-    const QString dest = QFileDialog::getExistingDirectory(this, "Select destination directory", ui->lineEditDestination->text(),
+    const QString dest = QFileDialog::getExistingDirectory(this, "Select destination directory",
+                                                           ui->lineEditDestination->text(),
                                                            QFileDialog::ShowDirsOnly);
-    ui->lineEditDestination->setText(dest);
+    if (!dest.isEmpty())
+    {
+        ui->lineEditDestination->setText(dest);
+    }
 }
 
 //===================================================================================================================================
 
 void MainWindow::on_pushButtonOrigin_clicked()
 {
-    const QString origin = QFileDialog::getExistingDirectory(this, "Select origin directory", ui->lineEditOrigin->text(),
+    const QString origin = QFileDialog::getExistingDirectory(this, "Select origin directory",
+                                                             ui->lineEditOrigin->text(),
                                                              QFileDialog::ShowDirsOnly);
-    ui->lineEditOrigin->setText(origin);
+    if (!origin.isEmpty())
+    {
+        ui->lineEditOrigin->setText(origin);
+    }
 }
 
 //===================================================================================================================================
@@ -89,10 +94,10 @@ void MainWindow::startCopy()
         QMessageBox::warning(this, "Fatal error", "Sorry not enought memory, can not alloc memory!");
         return;
     }
-    std::string tempDir = fs::temp_directory_path().string();
+    const auto tempDir = fs::temp_directory_path().string();
     for(size_t i = 0U; i < hardwConcur; i++)
     {
-        const std::string path = tempDir + tempFN + std::to_string(i) + tempExten;
+        const std::string path = tempDir + CopyLib::getTempFN() + std::to_string(i) + CopyLib::getTempExten();
 
         ppThreads[i] = new (std::nothrow) std::thread(CopyLib::worker, path,
                                                       std::ref(copiedFileSize),
@@ -117,15 +122,18 @@ void MainWindow::startCopy()
     // Update the progress
     while(fileNum != copiedFileNum && !copyCancel.load())
     {
+        std::this_thread::sleep_for(30ms);
+        QApplication::processEvents();
+
+        // Update info label
+        const std::string message = "Copied files: " + std::to_string(copiedFileNum) + " from "
+                + std::to_string(fileNum) + ", copied size: "
+                + std::to_string(copiedFileSize/1'048'576.0f) + " MBytes";
+        ui->labelStatus->setText(message.c_str());
+
         // Update progress bar
         const int value = (copiedFileSize * 100.0f) / scopeSize;
         ui->progressBar->setValue(value);
-
-        // Update info label
-        const std::string message = "Copied files: " + std::to_string(copiedFileNum) + ", bytes: " + std::to_string(copiedFileSize);
-        ui->labelStatus->setText(message.c_str());
-        std::this_thread::sleep_for(30ms);
-        QApplication::processEvents();
     }
 
     if (!copyCancel.load())
@@ -170,6 +178,10 @@ void MainWindow::on_pushButtonStartCopy_clicked()
             const auto ret = CopyLib::createCopyQueues(origin.toStdString(), dest.toStdString(), hardwConcur, scopeSize, fileNum);
             if (ret)
             {
+                ui->pushButtonStartCopy->setEnabled(false);
+                ui->pushButtonOrigin->setEnabled(false);
+                ui->pushButtonDestination->setEnabled(false);
+
                 const auto start = std::chrono::steady_clock::now();
                 
 				startCopy();
@@ -187,6 +199,10 @@ void MainWindow::on_pushButtonStartCopy_clicked()
                             + std::to_string(fileNum) + ", Copied size: "
                             + std::to_string(copiedFileSize/1'048'576.0f) + " MBytes, Took time: "
                             + std::to_string(time/1000.0f) + " sec.";
+
+                    // Update progress bar
+                    const int value = (copiedFileSize * 100.0f) / scopeSize;
+                    ui->progressBar->setValue(value);
                 }
                 else
                 {
@@ -200,6 +216,10 @@ void MainWindow::on_pushButtonStartCopy_clicked()
                 {
                     QMessageBox::warning(this, "Error", "Some files were not copied! Because of lack of permission or files were opened.");
                 }
+
+                ui->pushButtonStartCopy->setEnabled(true);
+                ui->pushButtonOrigin->setEnabled(true);
+                ui->pushButtonDestination->setEnabled(true);
             }
         }
         else
