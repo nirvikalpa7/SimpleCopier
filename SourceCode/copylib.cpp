@@ -130,13 +130,21 @@ void copyDirStructure()
                                    | fs::copy_options::directories_only;
 
         std::ifstream fin(pathFirstQueue);
+        std::error_code code;
         if (fin.is_open())
         {
             std::string origin;
             std::getline(fin, origin);
             std::string dest;
             std::getline(fin, dest);
-            fs::copy(origin, dest, copyOptions);
+            fs::copy(origin, dest, copyOptions, code);
+            if (code.value() != 0) // For access denied it is 5
+            {
+                copyErrorHappened.store(true);
+                const std::string logMesBase = std::string(__FUNCTION__) + ", thread: " + getCurrentThreadId() + ". ";
+                TLogger::getInstance().logMessage(logMesBase + "Error! Can not copy a file, you do not have permissions for the destination folder or the file is being opened. Destination: " + dest);
+            }
+
         }
     }
 }
@@ -176,10 +184,6 @@ void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
                     {
                         if(fs::is_regular_file(fullPath))
                         {
-                            // SIGABORT from filesystem::copy function
-                            // It is known a bug/crash from sigabort for many files from origin to write rpotected dir/destination
-                            // If we copy small number of files no sigabort happen. It is needed investigation.
-                            // Possible solution: SIGABORT can be caught by sig_handler fun
                             fs::copy(fullPath, dest + currentFile, copyOptions, code);
                             if (code.value() != 0) // For access denied it is 5
                             {

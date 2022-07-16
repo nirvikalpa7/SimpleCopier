@@ -81,6 +81,11 @@ void MainWindow::startCopy()
 
     CopyLib::copyDirStructure();
 
+    if (CopyLib::isCopyErrorHappened())
+    {
+        return;
+    }
+
     if (fileNum == 0U)
     {
         // no files to copy
