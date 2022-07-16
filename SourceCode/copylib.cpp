@@ -34,6 +34,19 @@ bool isCopyErrorHappened()
 bool createCopyQueues(const std::string & origin, const std::string & dest,
                       const uint32_t hardwConcur, uint64_t & scopeSize, uint64_t & fileNum)
 {
+    // Check input params
+    if (hardwConcur == 0 || origin.empty() || dest.empty())
+    {
+        return false;
+    }
+    {
+        const fs::path originPath = origin;
+        const fs::path destPath = dest;
+        if (!fs::exists(origin) || !fs::exists(dest) || originPath == destPath)
+        {
+            return false;
+        }
+    }
     std::ofstream * fplan = new (std::nothrow) std::ofstream [hardwConcur];
     if (fplan == nullptr)
     {
@@ -90,7 +103,7 @@ bool createCopyQueues(const std::string & origin, const std::string & dest,
 void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
             std::atomic<uint64_t>& copiedFileNum, const std::atomic<bool>& copyCancel)
 {
-    if (fs::exists(queue))
+    if (!queue.empty() && fs::exists(queue))
     {
         std::ifstream fin(queue);
         if (fin.is_open())
@@ -99,6 +112,11 @@ void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
             std::getline(fin, origin);
             std::string dest;
             std::getline(fin, dest);
+            if (origin.empty() || dest.empty())
+            {
+                fin.close();
+                return;
+            }
             std::string currentFile, fullPath;
             std::error_code code;
             const auto copyOptions = fs::copy_options::overwrite_existing;

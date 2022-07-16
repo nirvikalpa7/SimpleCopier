@@ -1,5 +1,6 @@
 
 Description: simple multithreading QT folder copier.
-Technologies: Qt 5.14, C++17, filesystem, thread
+Technologies: Qt 5.14, C++17, GoogleTests, filesystem, thread
+Version: 1.0.0
 
-Sidelnikov Dmitry (c)
+July 2022, Sidelnikov Dmitry (c)
