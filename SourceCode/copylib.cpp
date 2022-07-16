@@ -6,6 +6,7 @@
 #include <thread>
 #include <chrono>
 #include <csignal>
+#include <sstream>
 
 namespace CopyLib {
 
@@ -20,6 +21,14 @@ namespace {
 
     std::atomic<bool> copyErrorHappened{ false };
 
+    std::string getCurrentThreadId()
+    {
+        const auto myid = std::this_thread::get_id();
+        std::stringstream ss;
+        ss << myid;
+        return ss.str();
+    }
+
 }; // namespace
 
 //===================================================================================================================================
@@ -27,6 +36,14 @@ namespace {
 bool isCopyErrorHappened()
 {
     return copyErrorHappened;
+}
+
+//===================================================================================================================================
+
+bool isEnoughSpace(const std::string & dest, const uint64_t spaceNeeded)
+{
+    const auto space = fs::space(dest);
+    return (space.available >= spaceNeeded);
 }
 
 //===================================================================================================================================
@@ -83,7 +100,7 @@ bool createCopyQueues(const std::string & origin, const std::string & dest,
             const std::string full_file = dir_entry.path().string();
             const std::string file = full_file.substr(origin.size());
             const uint32_t fStreamIndex = fileNum % hardwConcur;
-            fplan[fStreamIndex] << file << std::endl;
+            fplan[fStreamIndex] << file << std::endl; // False positive warning, index is correct
             fileNum++;
         }
     }
@@ -95,54 +112,10 @@ bool createCopyQueues(const std::string & origin, const std::string & dest,
     delete [] fplan;
 
     copyErrorHappened.store(false);
+    TLogger::getInstance().startLogging(); // create log file and open it
     return true;
 }
 
-//===================================================================================================================================
-
-void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
-            std::atomic<uint64_t>& copiedFileNum, const std::atomic<bool>& copyCancel)
-{
-    if (!queue.empty() && fs::exists(queue))
-    {
-        std::ifstream fin(queue);
-        if (fin.is_open())
-        {
-            std::string origin;
-            std::getline(fin, origin);
-            std::string dest;
-            std::getline(fin, dest);
-            if (origin.empty() || dest.empty())
-            {
-                fin.close();
-                return;
-            }
-            std::string currentFile, fullPath;
-            std::error_code code;
-            const auto copyOptions = fs::copy_options::overwrite_existing;
-            while(!fin.eof() && !copyCancel.load())
-            {
-                std::getline(fin, currentFile);
-                if (!currentFile.empty())
-                {
-                    fullPath = origin + currentFile;
-                    if (fs::exists(fullPath) && fs::is_regular_file(fullPath))
-                    {
-                        fs::copy(fullPath, dest + currentFile, copyOptions, code);
-                        if (code.value() != 0) // For access denied it is 5
-                        {
-                            copyErrorHappened.store(true);
-                        }
-                        code.clear();
-                        copiedFileSize += fs::file_size(fullPath);
-                        copiedFileNum++;
-                    }
-                }
-            }
-            fin.close();
-        }
-    }
-}
 
 //===================================================================================================================================
 
@@ -170,6 +143,79 @@ void copyDirStructure()
 
 //===================================================================================================================================
 
+void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
+            std::atomic<uint64_t>& copiedFileNum, const std::atomic<bool>& copyCancel)
+{
+    const std::string logMesBase = std::string(__FUNCTION__) + ", thread: " + getCurrentThreadId() + ". ";
+
+    if (!queue.empty() && fs::exists(queue))
+    {
+        std::ifstream fin(queue);
+        if (fin.is_open())
+        {
+            std::string origin;
+            std::getline(fin, origin);
+            std::string dest;
+            std::getline(fin, dest);
+            if (origin.empty() || dest.empty())
+            {
+                TLogger::getInstance().logMessage(logMesBase + "Error! Incorrect structure in queue file: origin or destination dir is not provided! " + queue);
+                fin.close();
+                return;
+            }
+            std::string currentFile, fullPath;
+            std::error_code code;
+            const auto copyOptions = fs::copy_options::overwrite_existing;
+            while(!fin.eof() && !copyCancel.load())
+            {
+                std::getline(fin, currentFile);
+                if (!currentFile.empty())
+                {
+                    fullPath = origin + currentFile;
+                    if (fs::exists(fullPath))
+                    {
+                        if(fs::is_regular_file(fullPath))
+                        {
+                            // SIGABORT from filesystem::copy function
+                            // It is known a bug/crash from sigabort for many files from origin to write rpotected dir/destination
+                            // If we copy small number of files no sigabort happen. It is needed investigation.
+                            // Possible solution: SIGABORT can be caught by sig_handler fun
+                            fs::copy(fullPath, dest + currentFile, copyOptions, code);
+                            if (code.value() != 0) // For access denied it is 5
+                            {
+                                copyErrorHappened.store(true);
+                                TLogger::getInstance().logMessage(logMesBase + "Error! Can not copy a file, you do not have permissions for the destination folder or the file is being opened. " + fullPath);
+                            }
+                            code.clear();
+                            copiedFileSize += fs::file_size(fullPath);
+                            copiedFileNum++;
+                        }
+                        else
+                        {
+                            TLogger::getInstance().logMessage(logMesBase + "Warning! File to copy from queue file is not regular and will be skipped! " + fullPath);
+                        }
+                    }
+                    else
+                    {
+                        TLogger::getInstance().logMessage(logMesBase + "Error! A file to copy from queue file does not exist! " + fullPath);
+                    }
+                }
+            }
+            fin.close();
+        }
+        else
+        {
+            TLogger::getInstance().logMessage(logMesBase + "Error! Can not open input queue file! " + queue);
+        }
+    }
+    else
+    {
+        TLogger::getInstance().logMessage(logMesBase + "Error! Queue file param is an empty or does not exist!" + " Queue file param: " + queue);
+    }
+}
+
+//===================================================================================================================================
+
 void removeCopyQueues(const uint32_t hardwConcur)
 {
     const std::string tempDir = fs::temp_directory_path().string();
@@ -181,14 +227,8 @@ void removeCopyQueues(const uint32_t hardwConcur)
             fs::remove(path);
         }
     }
-}
 
-//===================================================================================================================================
-
-bool isEnoughSpace(const std::string & dest, const uint64_t spaceNeeded)
-{
-    const auto space = fs::space(dest);
-    return (space.available >= spaceNeeded);
+    TLogger::getInstance().finishLogging(); // close log file
 }
 
 //===================================================================================================================================

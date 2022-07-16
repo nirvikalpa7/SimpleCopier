@@ -38,7 +38,7 @@ TEST(CopyLibTests, isEnoughSpace)
 {
 	const std::string tempDir = fs::temp_directory_path().string();
 	
-	const uint64_t small = 1024U * 1024U * 10U; // 10 Mb
+	const uint64_t small = 1024ULL * 1024ULL * 10ULL; // 10 Mb
 	EXPECT_TRUE(CopyLib::isEnoughSpace(tempDir, small));
 
 	const uint64_t big = 1024ULL * 1024ULL * 1024ULL * 1024ULL * 500ULL; // 500 Tb
@@ -172,6 +172,37 @@ TEST(CopyLibTests, copyDirStructure_ManyFolders)
 
 //======================================================================================================
 
+TEST(CopyLibTests, logger)
+{
+	const std::string shortMessage = "Test message";
+	const std::string longMessage = "1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 1234567890 123";
+	const std::string emptyMessage;
+
+	EXPECT_FALSE(CopyLib::TLogger::getInstance().logMessage(shortMessage));
+	EXPECT_FALSE(CopyLib::TLogger::getInstance().logMessage(longMessage));
+	EXPECT_FALSE(CopyLib::TLogger::getInstance().logMessage(emptyMessage));
+
+	CopyLib::TLogger::getInstance().startLogging();
+	EXPECT_TRUE(CopyLib::TLogger::getInstance().logMessage(shortMessage));
+	EXPECT_TRUE(CopyLib::TLogger::getInstance().logMessage(longMessage));
+	EXPECT_FALSE(CopyLib::TLogger::getInstance().logMessage(emptyMessage));
+	CopyLib::TLogger::getInstance().finishLogging();
+
+	std::ifstream fin(CopyLib::TLogger::getInstance().getLogFileName());
+	ASSERT_TRUE(fin.is_open());
+	if (fin.is_open())
+	{
+		std::string buf;
+		std::getline(fin, buf);
+		EXPECT_TRUE(buf.find(shortMessage) != std::string::npos);
+		std::getline(fin, buf);
+		EXPECT_TRUE(buf.find(longMessage) != std::string::npos);
+		fin.close();
+	}
+}
+
+//======================================================================================================
+
 TEST(CopyLibTests, createCopyQueues_False)
 {
 	const auto tempDir = fs::temp_directory_path().string();
@@ -258,5 +289,8 @@ TEST(CopyLibTests, worker_TwoThreadsManyFile)
 {
 	// Add later 
 }
+
+// If we want to cover all branches by unit tests in worker fun
+// It is needed to add a lot extra tests
 
 //======================================================================================================

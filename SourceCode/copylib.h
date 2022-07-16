@@ -3,6 +3,8 @@
 
 #include <string>
 #include <atomic>
+#include <mutex>
+#include <fstream>
 
 namespace CopyLib {
 
@@ -23,6 +25,69 @@ namespace CopyLib {
     std::string getTempExten();
 
     bool isCopyErrorHappened();
+
+    //===================================================================================================================================
+
+    // Logger singleton for multithreaded worker fun
+    class TLogger
+    {
+    public:
+
+        static TLogger & getInstance()
+        {
+            static TLogger logger;
+            return logger;
+        }
+
+        bool logMessage(const std::string & message)
+        {
+            if (message.empty())
+            {
+                return false;
+            }
+
+            const std::lock_guard<std::mutex> lock(fStreamMutex);
+            if (fout.is_open())
+            {
+                fout << logMessageNum++ << ": "<< message << std::endl;
+                return true;
+            }
+            return false;
+        }
+
+        void startLogging()
+        {
+            if(!fout.is_open())
+            {
+                fout.open(logFileName);
+                logMessageNum = 1U;
+            }
+        }
+
+        void finishLogging()
+        {
+            if(fout.is_open())
+            {
+                fout.close();
+            }
+        }
+
+        std::string getLogFileName() const { return logFileName; }
+
+    private:
+
+        TLogger() { }
+        ~TLogger() { finishLogging(); }
+        TLogger(const TLogger & log) = delete;
+        TLogger operator=(const TLogger & log) = delete;
+
+        std::mutex fStreamMutex;
+        std::ofstream fout;
+        const std::string logFileName{"simpleCopyLog.txt"};
+        uint64_t logMessageNum{ 1U };
+    };
+
+    //===================================================================================================================================
 
 } // namespace CopyLib
 
