@@ -257,7 +257,68 @@ TEST(CopyLibTests, createCopyQueues_False)
 
 TEST(CopyLibTests, createCopyQueues_True_OneFileConcur1)
 {
-	// Add later
+	// Create dirs and test file
+	const auto tempDir = fs::temp_directory_path().string();
+	const auto originDir = tempDir + "origin/";
+	const auto destDir = tempDir + "dest/";
+
+	fs::create_directories(originDir);
+	fs::create_directories(destDir);
+
+	ASSERT_TRUE(fs::exists(originDir));
+	ASSERT_TRUE(fs::exists(destDir));
+
+	const std::string testFileName{ "test1.txt" };
+	const std::string fullTestFileName{ originDir + testFileName };
+	std::ofstream fout(fullTestFileName);
+	ASSERT_TRUE(fout.is_open());
+	if (fout.is_open())
+	{
+		const std::string str100sym{ "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890" };
+		fout << str100sym;
+		fout.close();
+	}
+	ASSERT_TRUE(fs::exists(fullTestFileName));
+
+	// Create one queue
+	bool ret{ false };
+	uint64_t scopeSize{ 0ULL };
+	uint64_t fileNum{ 0ULL };
+
+	const uint32_t hardwConcur{ 1U };
+	ret = CopyLib::createCopyQueues(originDir, destDir, hardwConcur, scopeSize, fileNum);
+	EXPECT_TRUE(ret);
+	EXPECT_EQ(fileNum, 1U);
+	const uint64_t testFileSize{ 100ULL };
+	EXPECT_EQ(scopeSize, testFileSize);
+
+	// Check queue file content
+	const auto pathFirstQueue = tempDir + CopyLib::getTempFN() + "0" + CopyLib::getTempExten();
+	ASSERT_TRUE(fs::exists(pathFirstQueue));
+	std::ifstream fin(pathFirstQueue);
+	ASSERT_TRUE(fin.is_open());
+	if (fin.is_open())
+	{
+		std::string buf;
+		std::getline(fin, buf);
+		EXPECT_TRUE(buf == originDir);
+		std::getline(fin, buf);
+		EXPECT_TRUE(buf == destDir);
+		std::getline(fin, buf);
+		EXPECT_TRUE(buf.find(testFileName) != std::string::npos);
+		fin.close();
+	}
+
+	// Remove files and dirs
+	CopyLib::removeCopyQueues(hardwConcur);
+
+	EXPECT_FALSE(fs::exists(pathFirstQueue));
+
+	fs::remove_all(originDir);
+	fs::remove_all(destDir);
+
+	EXPECT_FALSE(fs::exists(originDir));
+	EXPECT_FALSE(fs::exists(destDir));
 }
 
 TEST(CopyLibTests, createCopyQueues_True_OneFileConcur8)
