@@ -188,7 +188,8 @@ TEST(CopyLibTests, logger)
 	EXPECT_FALSE(CopyLib::TLogger::getInstance().logMessage(emptyMessage));
 	CopyLib::TLogger::getInstance().finishLogging();
 
-	std::ifstream fin(CopyLib::TLogger::getInstance().getLogFileName());
+	const auto fileName = CopyLib::TLogger::getInstance().getLogFileName();
+	std::ifstream fin(fileName);
 	ASSERT_TRUE(fin.is_open());
 	if (fin.is_open())
 	{
@@ -198,6 +199,7 @@ TEST(CopyLibTests, logger)
 		std::getline(fin, buf);
 		EXPECT_TRUE(buf.find(longMessage) != std::string::npos);
 		fin.close();
+		fs::remove(fileName);
 	}
 }
 
