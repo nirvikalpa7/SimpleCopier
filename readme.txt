@@ -16,5 +16,5 @@ Help to find ones! =)
 === In the next version ===
 
 1) Add more unit tests.
-2) Probably an error system for the library copylib.cpp and GUI cpp files need to be brought to uniformity. Try to create a single enum for errors in the program (or two enums for GUI level and low level).
+2) System of errors in the app have got tricky and complicated. Error system for the library copylib.cpp and GUI cpp files need to be brought to uniformity. Try to create a single enum for errors in the program (or two enums for GUI level and low level).
 
