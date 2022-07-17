@@ -85,7 +85,8 @@ namespace CopyLib {
         std::ofstream fout;
         const std::string logFileName{"simpleCopyLog.txt"};
         uint64_t logMessageNum{ 1U };
-    };
+
+    }; // TLogger
 
     //===================================================================================================================================
 
