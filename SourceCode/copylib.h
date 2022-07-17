@@ -2,23 +2,25 @@
 #define COPYLIB_H
 
 #include <string>
+#include <string_view>
 #include <atomic>
 #include <mutex>
 #include <fstream>
 
 namespace CopyLib {
 
-    bool createCopyQueues(const std::string & origin, const std::string & dest,
+    bool createCopyQueues(const std::string_view & origin, const std::string_view & dest,
                           const uint32_t hardwConcur, uint64_t & scopeSize, uint64_t & fileNum);
 
     void copyDirStructure();
 
-    bool isEnoughSpace(const std::string & dest, const uint64_t spaceNeeded);
+    bool isEnoughSpace(const std::string_view & dest, const uint64_t spaceNeeded);
 
     void removeCopyQueues(const uint32_t hardwConcur);
 
     void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
-                std::atomic<uint64_t>& copiedFileNum, const std::atomic<bool>& copyCancel);
+                std::atomic<uint64_t>& copiedFileNum, std::atomic<uint32_t>& finishedThreadsNum,
+                const std::atomic<bool>& copyCancel);
 
     std::string getTempFN();
 
@@ -39,7 +41,7 @@ namespace CopyLib {
             return logger;
         }
 
-        bool logMessage(const std::string & message)
+        bool logMessage(const std::string_view & message)
         {
             if (message.empty())
             {

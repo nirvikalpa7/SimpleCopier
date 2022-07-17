@@ -43,6 +43,8 @@ TEST(CopyLibTests, isEnoughSpace)
 
 	const uint64_t big = 1024ULL * 1024ULL * 1024ULL * 1024ULL * 500ULL; // 500 Tb
 	EXPECT_FALSE(CopyLib::isEnoughSpace(tempDir, big));
+
+	EXPECT_FALSE(CopyLib::isEnoughSpace("", small));
 }
 
 //======================================================================================================
@@ -169,6 +171,8 @@ TEST(CopyLibTests, copyDirStructure_ManyFolders)
 	EXPECT_FALSE(fs::exists(origin));
 	EXPECT_FALSE(fs::exists(dest));
 }
+
+// If we need to have full branches coverige for copyDirStructure it is needed to add more tests
 
 //======================================================================================================
 

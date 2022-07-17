@@ -40,15 +40,19 @@ bool isCopyErrorHappened()
 
 //===================================================================================================================================
 
-bool isEnoughSpace(const std::string & dest, const uint64_t spaceNeeded)
+bool isEnoughSpace(const std::string_view & dest, const uint64_t spaceNeeded)
 {
+    if (dest.empty())
+    {
+        return false;
+    }
     const auto space = fs::space(dest);
     return (space.available >= spaceNeeded);
 }
 
 //===================================================================================================================================
 
-bool createCopyQueues(const std::string & origin, const std::string & dest,
+bool createCopyQueues(const std::string_view & origin, const std::string_view & dest,
                       const uint32_t hardwConcur, uint64_t & scopeSize, uint64_t & fileNum)
 {
     // Check input params
@@ -92,17 +96,28 @@ bool createCopyQueues(const std::string & origin, const std::string & dest,
 
     scopeSize = 0U;
     fileNum = 0U;
-    for (const auto& dir_entry : fs::recursive_directory_iterator(origin))
-    {
-        if (dir_entry.is_regular_file())
+    bool retValue{ true };
+    try {
+        for (const auto& dir_entry : fs::recursive_directory_iterator(origin))
         {
-            scopeSize += dir_entry.file_size();
-            const std::string full_file = dir_entry.path().string();
-            const std::string file = full_file.substr(origin.size());
-            const uint32_t fStreamIndex = fileNum % hardwConcur;
-            fplan[fStreamIndex] << file << std::endl; // False positive warning, index is correct
-            fileNum++;
+            if (dir_entry.is_regular_file())
+            {
+                scopeSize += dir_entry.file_size();
+                const std::string full_file = dir_entry.path().string();
+                const std::string file = full_file.substr(origin.size());
+                const uint32_t fStreamIndex = fileNum % hardwConcur;
+                fplan[fStreamIndex] << file << std::endl; // False positive warning, index is correct
+                fileNum++;
+            }
         }
+    }
+    catch(const std::exception & e) // Access denied. Happens for C:/ or C:/Windows origin dir
+    {
+        retValue = false;
+        TLogger::getInstance().startLogging();
+        const auto logMesBase = std::string(__FUNCTION__) + ", thread: " + getCurrentThreadId() + ". ";
+        TLogger::getInstance().logMessage(logMesBase + "Error! Can not create copy queue files. Access denied. Origin: " + origin.data() + " System info: " + e.what());
+        TLogger::getInstance().finishLogging();
     }
 
     for(size_t i = 0; i < hardwConcur; i++)
@@ -111,18 +126,23 @@ bool createCopyQueues(const std::string & origin, const std::string & dest,
     }
     delete [] fplan;
 
-    copyErrorHappened.store(false);
-    TLogger::getInstance().startLogging(); // create log file and open it
-    return true;
-}
+    if (retValue)
+    {
+        TLogger::getInstance().startLogging(); // create log file and open it
+    }
+    copyErrorHappened.store(false); // variable for worker fun copy error signalization
 
+    return retValue;
+}
 
 //===================================================================================================================================
 
 void copyDirStructure()
 {
-    const std::string tempDir = fs::temp_directory_path().string();
-    const std::string pathFirstQueue = tempDir + tempFN + "0" + tempExten;
+    const auto tempDir = fs::temp_directory_path().string();
+    const auto pathFirstQueue = tempDir + tempFN + "0" + tempExten;
+    const auto logMesBase = std::string(__FUNCTION__) + ", thread: " + getCurrentThreadId() + ". Error! ";
+    auto & logger = TLogger::getInstance();
     if (fs::exists(pathFirstQueue))
     {
         const auto copyOptions = fs::copy_options::update_existing
@@ -130,29 +150,51 @@ void copyDirStructure()
                                    | fs::copy_options::directories_only;
 
         std::ifstream fin(pathFirstQueue);
-        std::error_code code;
         if (fin.is_open())
         {
             std::string origin;
             std::getline(fin, origin);
             std::string dest;
             std::getline(fin, dest);
-            fs::copy(origin, dest, copyOptions, code);
-            if (code.value() != 0) // For access denied it is 5
+            if (!origin.empty() && !dest.empty())
             {
-                copyErrorHappened.store(true);
-                const std::string logMesBase = std::string(__FUNCTION__) + ", thread: " + getCurrentThreadId() + ". ";
-                TLogger::getInstance().logMessage(logMesBase + "Error! Can not copy a file, you do not have permissions for the destination folder or the file is being opened. Destination: " + dest);
+                if (fs::exists(origin) && fs::exists(dest))
+                {
+                    std::error_code code;
+                    fs::copy(origin, dest, copyOptions, code);
+                    if (code.value() != 0) // For access denied it is 5
+                    {
+                        copyErrorHappened.store(true);
+                        logger.logMessage(logMesBase + "Can not copy a file, you do not have permissions for the destination folder or the file is being opened. Destination: " + dest);
+                    }
+                }
+                else
+                {
+                    logger.logMessage(logMesBase + "Origin or destination dir does not exist! Origin: " + origin + " Dest: " + dest);
+                }
             }
-
+            else
+            {
+                logger.logMessage(logMesBase + "Origin or destination dir is en empty in the first queue file! " + pathFirstQueue);
+            }
+            fin.close();
         }
+        else
+        {
+            logger.logMessage(logMesBase + "Can not open queue file! " + pathFirstQueue);
+        }
+    }
+    else
+    {
+        logger.logMessage(logMesBase + "First queue file does not exist! " + pathFirstQueue);
     }
 }
 
 //===================================================================================================================================
 
 void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
-            std::atomic<uint64_t>& copiedFileNum, const std::atomic<bool>& copyCancel)
+            std::atomic<uint64_t>& copiedFileNum, std::atomic<uint32_t>& finishedThreadsNum,
+            const std::atomic<bool>& copyCancel)
 {
     const std::string logMesBase = std::string(__FUNCTION__) + ", thread: " + getCurrentThreadId() + ". ";
 
@@ -216,6 +258,8 @@ void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
     {
         TLogger::getInstance().logMessage(logMesBase + "Error! Queue file param is an empty or does not exist!" + " Queue file param: " + queue);
     }
+
+    finishedThreadsNum++;
 }
 
 //===================================================================================================================================

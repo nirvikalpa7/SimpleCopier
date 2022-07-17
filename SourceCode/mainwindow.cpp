@@ -77,6 +77,7 @@ MainWindow::MainWindow(QWidget *parent)
         ui->lineEditDestination->setText(curPath);
     }
 
+    // Hardware concurrency
     hardwConcur = std::thread::hardware_concurrency();
     const QString statusBarMessage = QString("Available hardware concurrency: ") + std::to_string(hardwConcur).c_str() + " threads";
     ui->statusbar->showMessage(statusBarMessage);
@@ -166,7 +167,7 @@ void MainWindow::on_pushButtonStartCopy_clicked()
 
                 // Update status label
                 std::string message;
-                if (copyCancel.load())
+                if (copyCancel)
                 {
                     message = "Copy is CANCELED! Copied files: " + std::to_string(copiedFileNum) + " from "
                             + std::to_string(fileNum) + ", Copied size: "
@@ -193,6 +194,10 @@ void MainWindow::on_pushButtonStartCopy_clicked()
                 ui->pushButtonStartCopy->setEnabled(true);
                 ui->pushButtonOrigin->setEnabled(true);
                 ui->pushButtonDestination->setEnabled(true);
+            }
+            else
+            {
+                QMessageBox::warning(this, "Error", "Can not create copy files queues. Probably access denied (for origin dir).");
             }
         }
         else
@@ -236,6 +241,7 @@ void MainWindow::startCopy()
         QMessageBox::warning(this, "Fatal error", QString(__FUNCTION__) + " - Sorry not enought memory, can not alloc memory for threads!");
         return;
     }
+    finishedThreadsNum.store(0U);
     const auto tempDir = fs::temp_directory_path().string();
     for(size_t i = 0U; i < hardwConcur; i++)
     {
@@ -244,6 +250,7 @@ void MainWindow::startCopy()
         ppThreads[i] = new (std::nothrow) std::thread(CopyLib::worker, path,
                                                       std::ref(copiedFileSize),
                                                       std::ref(copiedFileNum),
+                                                      std::ref(finishedThreadsNum),
                                                       std::ref(copyCancel));
 
         if (ppThreads[i] == nullptr) // Safe start canceling
@@ -262,7 +269,8 @@ void MainWindow::startCopy()
     ui->pushButtonCancel->setEnabled(true);
 
     // Update the progress
-    while(fileNum != copiedFileNum && !copyCancel.load())
+    const auto oneMb = 1'048'576.0f;
+    while((finishedThreadsNum != hardwConcur) && !copyCancel)
     {
         std::this_thread::sleep_for(guiUpdateInterval);
         QApplication::processEvents();
@@ -270,7 +278,7 @@ void MainWindow::startCopy()
         // Update info label
         const std::string message = "Copied files: " + std::to_string(copiedFileNum) + " from "
                 + std::to_string(fileNum) + ", copied size: "
-                + std::to_string(copiedFileSize/1'048'576.0f) + " MBytes";
+                + std::to_string(copiedFileSize / oneMb) + " MBytes";
         ui->labelStatus->setText(message.c_str());
 
         // Update progress bar
@@ -278,7 +286,7 @@ void MainWindow::startCopy()
         ui->progressBar->setValue(value);
     }
 
-    if (!copyCancel.load())
+    if (!copyCancel)
     {
         ui->progressBar->setValue(100);
     }

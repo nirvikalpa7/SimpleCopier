@@ -42,5 +42,6 @@ private:
 
     // Available CPU cores
     uint32_t hardwConcur{ 0U };
+    std::atomic<uint32_t> finishedThreadsNum{ 0U };
 };
 #endif // MAINWINDOW_H
