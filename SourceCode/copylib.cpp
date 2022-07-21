@@ -97,8 +97,9 @@ bool createCopyQueues(const std::string_view & origin, const std::string_view & 
     scopeSize = 0U;
     fileNum = 0U;
     bool retValue{ true };
+    const auto dirOption { std::filesystem::directory_options::skip_permission_denied };
     try {
-        for (const auto& dir_entry : fs::recursive_directory_iterator(origin))
+        for (const auto& dir_entry : fs::recursive_directory_iterator(origin, dirOption))
         {
             if (dir_entry.is_regular_file())
             {
@@ -111,13 +112,14 @@ bool createCopyQueues(const std::string_view & origin, const std::string_view & 
             }
         }
     }
-    catch(const std::exception & e) // Access denied. Happens for C:/ or C:/Windows origin dir
+    catch(const std::exception & e) // Access denied. Can happens for C:/ or C:/Windows origin dir
     {
         retValue = false;
-        TLogger::getInstance().startLogging();
+        auto & logger = TLogger::getInstance();
+        logger.startLogging();
         const auto logMesBase = std::string(__FUNCTION__) + ", thread: " + getCurrentThreadId() + ". ";
-        TLogger::getInstance().logMessage(logMesBase + "Error! Can not create copy queue files. Access denied. Origin: " + origin.data() + " System info: " + e.what());
-        TLogger::getInstance().finishLogging();
+        logger.logMessage(logMesBase + "Error! Can not create copy queue files. Access denied. Origin: " + origin.data() + " System info: " + e.what());
+        logger.finishLogging();
     }
 
     for(size_t i = 0; i < hardwConcur; i++)
@@ -167,6 +169,7 @@ void copyDirStructure()
                         copyErrorHappened.store(true);
                         logger.logMessage(logMesBase + "Can not copy a file, you do not have permissions for the destination folder or the file is being opened. Destination: " + dest);
                     }
+                    code.clear();
                 }
                 else
                 {
@@ -197,6 +200,7 @@ void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
             const std::atomic<bool>& copyCancel)
 {
     const std::string logMesBase = std::string(__FUNCTION__) + ", thread: " + getCurrentThreadId() + ". ";
+    auto & logger = TLogger::getInstance();
 
     if (!queue.empty() && fs::exists(queue))
     {
@@ -209,7 +213,7 @@ void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
             std::getline(fin, dest);
             if (origin.empty() || dest.empty())
             {
-                TLogger::getInstance().logMessage(logMesBase + "Error! Incorrect structure in queue file: origin or destination dir is not provided! " + queue);
+                logger.logMessage(logMesBase + "Error! Incorrect structure in queue file: origin or destination dir is not provided! " + queue);
                 fin.close();
                 return;
             }
@@ -230,7 +234,7 @@ void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
                             if (code.value() != 0) // For access denied it is 5
                             {
                                 copyErrorHappened.store(true);
-                                TLogger::getInstance().logMessage(logMesBase + "Error! Can not copy a file, you do not have permissions for the destination folder or the file is being opened. " + fullPath);
+                                logger.logMessage(logMesBase + "Error! Can not copy a file, you do not have permissions for the destination folder or the file is being opened. " + fullPath);
                             }
                             code.clear();
                             copiedFileSize += fs::file_size(fullPath);
@@ -238,12 +242,12 @@ void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
                         }
                         else
                         {
-                            TLogger::getInstance().logMessage(logMesBase + "Warning! File to copy from queue file is not regular and will be skipped! " + fullPath);
+                            logger.logMessage(logMesBase + "Warning! File to copy from queue file is not regular and will be skipped! " + fullPath);
                         }
                     }
                     else
                     {
-                        TLogger::getInstance().logMessage(logMesBase + "Error! A file to copy from queue file does not exist! " + fullPath);
+                        logger.logMessage(logMesBase + "Error! A file to copy from queue file does not exist! " + fullPath);
                     }
                 }
             }
@@ -251,12 +255,12 @@ void worker(const std::string queue, std::atomic<uint64_t>& copiedFileSize,
         }
         else
         {
-            TLogger::getInstance().logMessage(logMesBase + "Error! Can not open input queue file! " + queue);
+            logger.logMessage(logMesBase + "Error! Can not open input queue file! " + queue);
         }
     }
     else
     {
-        TLogger::getInstance().logMessage(logMesBase + "Error! Queue file param is an empty or does not exist!" + " Queue file param: " + queue);
+        logger.logMessage(logMesBase + "Error! Queue file param is an empty or does not exist!" + " Queue file param: " + queue);
     }
 
     finishedThreadsNum++;
